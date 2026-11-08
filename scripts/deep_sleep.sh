@@ -266,7 +266,7 @@ ds_sms_pkg() {
     case "$p" in ''|null) ;; *) echo "$p"; return 0 ;; esac
     for p in com.hihonor.mms com.huawei.mms com.android.mms \
              com.google.android.apps.messaging com.samsung.android.messaging \
-             com.oplus.mms com.coloros.mms com.oneplus.mms com.miui.mms com.vivo.mms; do
+             com.oplus.mms com.coloros.mms com.miui.mms com.vivo.mms; do
         pm list packages "$p" 2>/dev/null | grep -qx "package:$p" && {
             echo "$p"; return 0
         }
@@ -282,7 +282,7 @@ ds_alarm_soon() {
     nows=$(now)
     timeout 3 dumpsys alarm 2>/dev/null | awk -v now="$nows" -v win="$ALARM_GUARD_SEC" '
         /Alarm\{/ {
-            if ($0 !~ /alarmclock|deskclock|AlarmClock|DeskClock/) next
+            if ($0 !~ /alarmclock|deskclock|AlarmClock/) next
             if (!match($0, /origWhen[ =][0-9]+/)) next
             s = substr($0, RSTART, RLENGTH)
             sub(/^origWhen[ =]/, "", s)

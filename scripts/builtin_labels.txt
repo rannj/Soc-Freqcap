@@ -21,7 +21,6 @@ com.sec.android.app.launcher            # 桌面
 com.android.camera                      # 相机
 com.android.camera2                     # 相机
 com.oplus.camera                        # 相机
-com.oneplus.camera                      # 相机
 com.coloros.camera                      # 相机
 com.hihonor.camera                      # 相机
 com.huawei.camera                       # 相机
@@ -30,7 +29,6 @@ com.vivo.camera                         # 相机
 com.samsung.android.camera              # 相机
 com.android.gallery3d                   # 相册
 com.oplus.gallery3d                     # 相册
-com.oneplus.gallery                     # 相册
 com.coloros.gallery3d                   # 相册
 com.hihonor.gallery                     # 相册
 com.huawei.gallery                      # 相册
@@ -39,7 +37,6 @@ com.vivo.gallery                        # 相册
 com.google.android.apps.photos          # 相册
 com.android.documentsui                 # 文件
 com.coloros.filemanager                 # 文件管理
-com.oneplus.filemanager                 # 文件管理
 com.hihonor.filemanager                 # 文件管理
 com.huawei.hidisk                       # 文件管理
 com.miui.fileexplorer                   # 文件管理
@@ -74,8 +71,6 @@ com.hihonor.deskclock                   # 时钟
 com.huawei.deskclock                    # 时钟
 com.coloros.alarmclock                  # 时钟
 com.oplus.alarmclock                    # 时钟
-com.oplus.deskclock                     # 时钟
-com.oneplus.deskclock                   # 时钟
 com.miui.clock                          # 时钟
 com.vivo.alarmclock                     # 时钟
 
