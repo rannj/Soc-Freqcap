@@ -266,7 +266,7 @@ ds_sms_pkg() {
     case "$p" in ''|null) ;; *) echo "$p"; return 0 ;; esac
     for p in com.hihonor.mms com.huawei.mms com.android.mms \
              com.google.android.apps.messaging com.samsung.android.messaging \
-             com.oplus.mms com.coloros.mms com.miui.mms com.vivo.mms; do
+             com.oplus.mms com.coloros.mms com.oneplus.mms com.miui.mms com.vivo.mms; do
         pm list packages "$p" 2>/dev/null | grep -qx "package:$p" && {
             echo "$p"; return 0
         }
@@ -282,7 +282,7 @@ ds_alarm_soon() {
     nows=$(now)
     timeout 3 dumpsys alarm 2>/dev/null | awk -v now="$nows" -v win="$ALARM_GUARD_SEC" '
         /Alarm\{/ {
-            if ($0 !~ /alarmclock|deskclock|AlarmClock/) next
+            if ($0 !~ /alarmclock|deskclock|AlarmClock|DeskClock/) next
             if (!match($0, /origWhen[ =][0-9]+/)) next
             s = substr($0, RSTART, RLENGTH)
             sub(/^origWhen[ =]/, "", s)
@@ -986,19 +986,15 @@ ds_policy_migrate() {
             printf '%s\n' "$installed" | grep -qx -- "$p" || continue
             printf 'nice=%s\n' "$p"
         done
-        if printf '%s\n' "$installed" | grep -qx -- 'com.tencent.mm'; then
-            printf 'push=com.tencent.mm:push\n'
-        fi
     } | atomic_write "$DSLEEP_CONF" 0644 || return 0
-    # 旧版把这些整包永久加进了系统 Doze 白名单；迁移时撤掉（微信 push 会在
-    # 每次进入深睡时重新临时加白，QQ 等不再整包放行）。
+    # 旧版把这些整包永久加进了系统 Doze 白名单；迁移时撤掉（微信不再默认加白）。
     for p in com.tencent.mm com.tencent.mobileqq com.tencent.tim \
              com.tencent.wework com.alibaba.android.rimet; do
         timeout 2 dumpsys deviceidle whitelist "-$p" >/dev/null 2>&1
     done
     printf '%s\n' "policy_v2 $(now)" > "$marker" 2>/dev/null
     ds_conf_raw=""
-    log_ds "深睡策略已迁移：微信/QQ 等改为保活（不冻结），微信 push 放行"
+    log_ds "深睡策略已迁移：微信/QQ 等移出默认 Doze 白名单"
     return 0
 }
 
@@ -1052,6 +1048,41 @@ ds_policy_migrate_v3() {
     printf '%s\n' "policy_v3 $(now)" > "$marker" 2>/dev/null
     ds_conf_raw=""
     log_ds "深睡策略已迁移：音乐/健康/Scene 移出 Doze 白名单（改为保活）"
+    return 0
+}
+
+# V4：微信（com.tencent.mm）已从默认 Doze 白名单释放。
+# 旧版 policy_v2 自动写入的 push=com.tencent.mm:push 仍会在每次进入深睡时把微信
+# 塞进系统 Doze 白名单（且不在 WebUI 名单里显示）。这里一次性清掉该隐藏条目，
+# 并在用户未手动保留 white=com.tencent.mm 时撤除系统级白名单残留。
+ds_policy_migrate_v4() {
+    local marker="$CONF_DIR/run/policy_v4"
+    [ -f "$marker" ] && return 0
+    [ -f "$DSLEEP_CONF" ] || return 0
+    mkdir -p "$CONF_DIR/run" 2>/dev/null
+    cp -f "$DSLEEP_CONF" "$DSLEEP_CONF.bak-policy4" 2>/dev/null
+    awk '
+        /^[[:space:]]*push[[:space:]]*=/ {
+            v = $0
+            sub(/^[^=]*=/, "", v)
+            sub(/#.*/, "", v)
+            gsub(/[[:space:]\r]/, "", v)
+            if (v == "com.tencent.mm:push" || v == "com.tencent.mm") next
+        }
+        { print }
+    ' "$DSLEEP_CONF" | atomic_write "$DSLEEP_CONF" 0644 || return 0
+    if ! awk '
+        /^[[:space:]]*white[[:space:]]*=/ {
+            v = $0; sub(/^[^=]*=/, "", v); sub(/#.*/, "", v); gsub(/[[:space:]\r]/, "", v)
+            if (v == "com.tencent.mm") f = 1
+        }
+        END { exit !f }
+    ' "$DSLEEP_CONF" 2>/dev/null; then
+        timeout 2 dumpsys deviceidle whitelist -com.tencent.mm >/dev/null 2>&1
+    fi
+    printf '%s\n' "policy_v4 $(now)" > "$marker" 2>/dev/null
+    ds_conf_raw=""
+    log_ds "深睡策略已迁移：微信已从默认 Doze 白名单释放"
     return 0
 }
 
@@ -1386,19 +1417,34 @@ ds_screen_event() {
     return 1
 }
 
-# 已在深睡中的主循环：冻结窗口内 2 秒一步，之后只等事件/维护轮。
+# 计算当前轮在 ds_active_wait 里最多能睡多少秒：
+#   - 尚未 force-idle（ds_doze_sent != 1）：必须在 DS_DOZE_AT（息屏满 60 秒）或
+#     闹钟重试点（DS_DOZE_RETRY）醒来收口，否则会一觉睡满 300 秒把 60 秒收口拖到 320 秒；
+#   - 已经 force-idle（ds_doze_sent == 1）：按复查阶梯（1/5/30/60 分钟）缩短。
+ds_calc_wait_sec() {
+    local t="$1" w="$DS_ACTIVE_TICK" due left rdue
+    if [ "$ds_doze_sent" != "1" ]; then
+        due=$((ds_screen_off_ts + DS_DOZE_AT))
+        if [ "$ds_doze_checked" -gt 0 ]; then
+            rdue=$((ds_doze_checked + DS_DOZE_RETRY))
+            [ "$rdue" -gt "$due" ] && due="$rdue"
+        fi
+        left=$((due - t))
+        [ "$left" -lt "$w" ] && w="$left"
+    elif [ "$ds_doze_next" -gt 0 ]; then
+        left=$((ds_doze_next - t))
+        [ "$left" -lt "$w" ] && w="$left"
+    fi
+    [ "$w" -lt 5 ] && w=5
+    echo "$w"
+}
+
+# 已在深睡中的主循环：阻塞等亮屏事件或下一个收口/复查维护点。
 ds_active_wait() {
-    local t left
+    local t
     while [ "$ds_active" = "1" ] && [ "$ds_quit" != "1" ]; do
         t=$(now)
-        # Doze 复查点可能比维护轮密（1 分钟、5 分钟），到点前就少睡一会儿；
-        # 否则 300 秒的维护轮会把 1 分钟那次直接睡过去。
-        ds_wait_sec=$DS_ACTIVE_TICK
-        if [ "$ds_doze_sent" = "1" ] && [ "$ds_doze_next" -gt 0 ]; then
-            left=$((ds_doze_next - t))
-            [ "$left" -lt "$ds_wait_sec" ] && ds_wait_sec="$left"
-        fi
-        [ "$ds_wait_sec" -lt 5 ] && ds_wait_sec=5
+        ds_wait_sec="$(ds_calc_wait_sec "$t")"
         ds_screen_event
         if [ "$ds_event_on" = "1" ]; then
             ds_exit "亮屏"
@@ -1489,6 +1535,8 @@ ds_main() {
     ds_policy_migrate
     ds_conf_load
     ds_policy_migrate_v3
+    ds_conf_load
+    ds_policy_migrate_v4
     ds_conf_load
     ds_freeze_probe
     ds_freeze_restore_if_any

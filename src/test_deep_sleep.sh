@@ -357,6 +357,32 @@ ok "$(ds_doze_interval 2)" "1800" "第 3 次：30 分钟"
 ok "$(ds_doze_interval 3)" "3600" "第 4 次：60 分钟"
 ok "$(ds_doze_interval 9)" "3600" "之后每 60 分钟一次"
 
+echo "== ds_active_wait 等待秒数：未收口前按 60 秒收口点缩短（不睡 300 秒）=="
+ds_doze_sent=0; ds_doze_checked=0; ds_screen_off_ts=1000
+ok "$(ds_calc_wait_sec 1020)" "40" "T+20s 进深睡后最多睡 40s 到 T+60s 收口（不再误睡 300s）"
+ds_doze_checked=1060
+ok "$(ds_calc_wait_sec 1060)" "60" "闹钟拦下后按 DS_DOZE_RETRY=60s 重试"
+ds_doze_sent=1; ds_doze_next=1120
+ok "$(ds_calc_wait_sec 1060)" "60" "收口后第 1 步复查按 60s 等待"
+ds_doze_next=2860
+ok "$(ds_calc_wait_sec 1060)" "300" "长间隔复查封顶在 DS_ACTIVE_TICK=300s"
+
+echo "== V4 策略迁移：清除旧版残留的微信 push= 并释放 Doze 白名单 =="
+rm -f "$DATA/run/policy_v4"
+printf 'enable=1\nnice=com.tencent.mm\npush=com.tencent.mm:push\n' > "$DSLEEP_CONF"
+: > "$STATE/calls"
+ds_policy_migrate_v4
+ok "$(grep -c '^push=com.tencent.mm' "$DSLEEP_CONF")" "0" "旧版自动写入的 push=com.tencent.mm:push 被清掉"
+ok "$(grep -c 'whitelist -com.tencent.mm' "$STATE/calls")" "1" "未保留 white= 时撤除系统 Doze 白名单里的微信"
+ok "$([ -f "$DATA/run/policy_v4" ] && echo y || echo n)" "y" "写下 policy_v4 一次性标记"
+rm -f "$DATA/run/policy_v4"
+printf 'enable=1\nwhite=com.tencent.mm\npush=com.tencent.mm:push\n' > "$DSLEEP_CONF"
+: > "$STATE/calls"
+ds_policy_migrate_v4
+ok "$(grep -c '^white=com.tencent.mm$' "$DSLEEP_CONF")" "1" "用户手动加的 white=com.tencent.mm 保留不动"
+ok "$(grep -c 'whitelist -com.tencent.mm' "$STATE/calls")" "0" "有手动 white= 时不撤系统白名单"
+printf 'enable=1\n' > "$DSLEEP_CONF"; ds_conf_load
+
 echo "== 收口让路闹钟 =="
 echo 0 > "$STATE/forced"
 printf 'ACTIVE\n' > "$STATE/deep"

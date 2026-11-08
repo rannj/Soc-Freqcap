@@ -133,6 +133,8 @@ _adapt_match() {
   _m=$(getprop ro.product.model 2>/dev/null | tr 'a-z' 'A-Z')
   _s=$(getprop ro.soc.model 2>/dev/null | tr 'a-z' 'A-Z')
   [ -z "$_s" ] && _s=$(getprop ro.board.platform 2>/dev/null | tr 'a-z' 'A-Z')
+  [ -z "$_s" ] && [ -r /sys/devices/soc0/machine ] \
+    && _s=$(tr 'a-z\r\n' 'A-Z  ' < /sys/devices/soc0/machine 2>/dev/null)
   for _f in "$MODPATH"/adapt/*.conf; do
     [ -f "$_f" ] || continue
     _ml=$(grep '^#match ' "$_f" 2>/dev/null)
@@ -431,9 +433,17 @@ if [ -f "$W_NEW" ]; then
       _nr=0
       while read -r _p; do
         case "$_p" in ''|*[!A-Za-z0-9._]*) continue ;; esac
-        grep -Fxq -- "white=$_p" "$W_CONF" 2>/dev/null || continue
-        grep -Fxv -- "white=$_p" "$W_CONF" > "$W_CONF.rm" 2>/dev/null \
-          && mv -f "$W_CONF.rm" "$W_CONF" 2>/dev/null && _nr=$((_nr + 1))
+        if grep -Fxq -- "white=$_p" "$W_CONF" 2>/dev/null; then
+          grep -Fxv -- "white=$_p" "$W_CONF" > "$W_CONF.rm" 2>/dev/null \
+            && mv -f "$W_CONF.rm" "$W_CONF" 2>/dev/null && _nr=$((_nr + 1))
+        fi
+        if [ "$_p" = "com.tencent.mm" ] && grep -Eq "^[[:space:]]*push=$_p(:push)?([[:space:]]|#|$)" "$W_CONF" 2>/dev/null; then
+          grep -Ev "^[[:space:]]*push=$_p(:push)?([[:space:]]|#|$)" "$W_CONF" > "$W_CONF.rm" 2>/dev/null \
+            && mv -f "$W_CONF.rm" "$W_CONF" 2>/dev/null
+        fi
+        command -v dumpsys >/dev/null 2>&1 \
+          && timeout 2 dumpsys deviceidle whitelist "-$_p" >/dev/null 2>&1
+        :
       done < "$DATA/.wdel"
       [ "$_nr" -gt 0 ] && ui_print "  深睡豁免已撤下：$_nr 个（新版清单移除）"
       _nw=0

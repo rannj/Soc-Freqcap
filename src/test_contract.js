@@ -2347,10 +2347,13 @@ console.log('\n== 分应用档位 ==');
   /* 内置深睡永久豁免：通讯/运动健康默认加白，只给已安装的包写。 */
   {
     const w = fs.readFileSync(MOD0 + '/scripts/builtin_white.txt', 'utf8');
-    const need = ['com.tencent.mm', 'com.tencent.mobileqq', 'com.alibaba.android.rimet',
+    const lbl = fs.readFileSync(MOD0 + '/scripts/builtin_labels.txt', 'utf8');
+    const need = ['com.tencent.mobileqq', 'com.alibaba.android.rimet',
                   'com.tencent.wework', 'com.mi.health'];
     ok(need.every(p => new RegExp('^' + p.replace(/\./g, '\\.') + '\\b', 'm').test(w)),
-       '内置豁免覆盖微信 / QQ / 钉钉 / 企业微信 / 小米运动健康');
+       '内置豁免覆盖 QQ / 钉钉 / 企业微信 / 小米运动健康');
+    ok(!/^com\.tencent\.mm\b/m.test(w) && /^com\.tencent\.mm\b/m.test(lbl),
+       '微信已移出默认 Doze 白名单，且中文名保留在 builtin_labels.txt');
     const pk = w.split('\n').filter(l => /^[A-Za-z]/.test(l)).map(l => l.trim().split(/\s+/)[0]);
     ok(pk.length >= 30 && new Set(pk).size === pk.length,
        '豁免清单去重且覆盖通讯/音乐/健康/系统应用', pk.length + ' 条');
@@ -2700,6 +2703,7 @@ console.log('\n== 芯片预设 / 档位行渲染 ==');
   {
     const s8750 = fs.readFileSync(MOD0 + '/adapt/sm8750.conf', 'utf8');
     const s8850 = fs.readFileSync(MOD0 + '/adapt/sm8850.conf', 'utf8');
+    const op8850 = fs.readFileSync(MOD0 + '/adapt/oneplus_sm8850.conf', 'utf8');
     const s8845 = fs.readFileSync(MOD0 + '/adapt/sm8845.conf', 'utf8');
     const s8975 = fs.readFileSync(MOD0 + '/adapt/sm8975.conf', 'utf8');
     ok(/^#match soc=SM8750$/m.test(s8750) && /^default_cpu_pct_big=46$/m.test(s8750) &&
@@ -2709,6 +2713,11 @@ console.log('\n== 芯片预设 / 档位行渲染 ==');
     ok(/^#match soc=SM8850$/m.test(s8850) && /^default_cpu_pct_big=46$/m.test(s8850) &&
        /^default_cpu_pct_little=52$/m.test(s8850) && /^default_gpu_pct=42$/m.test(s8850),
        '8E5 默认值在 adapt/sm8850.conf（46/52、GPU42）');
+    ok(/^#match brand=OnePlus$/m.test(op8850) && /^#match soc=SM8850$/m.test(op8850) &&
+       /^default_cpu_pct_big=50$/m.test(op8850) && /^default_cpu_pct_little=55$/m.test(op8850) &&
+       /^default_gpu_pct=42$/m.test(op8850) && /^default_th_high=70$/m.test(op8850) &&
+       /^default_th_low=64$/m.test(op8850) && /^default_psi_gain=15$/m.test(op8850),
+       '一加 15T（OnePlus + SM8850/SM8850-AC）专属预设在 adapt/oneplus_sm8850.conf');
     ok(/^#match soc=SM8845$/m.test(s8845) && /^default_cpu_pct_big=51$/m.test(s8845) &&
        /^default_cpu_pct_little=53$/m.test(s8845) && /^default_gpu_pct=41$/m.test(s8845),
        '8 Gen 5 默认值在 adapt/sm8845.conf（51/53、GPU41）');
@@ -2754,7 +2763,7 @@ console.log('\n== 芯片预设 / 档位行渲染 ==');
     /* 覆盖安装不会自动套预设，页面手动入口必须能按当前 SoC 找到同一份文件 */
     ok(/preset_get\)\s+preset_get/.test(apiSrc) &&
        /preset_apply\)\s+preset_apply/.test(apiSrc) &&
-       /_preset_match\(\)[\s\S]{0,500}#match/.test(apiSrc) &&
+       /_preset_match\(\)[\s\S]{0,650}#match/.test(apiSrc) &&
        /getprop ro\.soc\.model/.test(apiSrc),
        'api 有推荐预设：按 SoC 匹配 adapt/*.conf（和装机同一套规则）');
     ok(/id="preset-hint"/.test(html) && /id="preset-apply"/.test(html) &&
@@ -3512,8 +3521,8 @@ console.log('\n== restart 不吊住调用者 ==');
      '收口命令 cmd 优先、dumpsys 兜底');
   ok(/dumpsys deviceidle get deep/.test(ds) && /重新收口/.test(ds),
      '掉出 IDLE 就重新收口（拦截所有退出，常开）');
-  ok(/ds_wait_sec/.test(ds) && /ds_doze_next/.test(ds),
-     '维护轮跟着复查点缩短，1 分钟那次不会被 5 分钟的 tick 睡过去');
+  ok(/ds_wait_sec/.test(ds) && /ds_doze_next/.test(ds) && /ds_calc_wait_sec/.test(ds),
+     '维护轮在收口前与复查点前均自动缩短等待，不会把 60 秒收口或 1 分钟复查睡过去');
   ok(/MAX_WAKE_APPS=63/.test(ds), '唤醒榜应用数封顶 63，防止文件无限膨胀');
 
   /* 不再改系统 Doze 常量：进入不再靠全局门槛，旧版快照仍能按原值还原。 */
@@ -3556,9 +3565,12 @@ console.log('\n== restart 不吊住调用者 ==');
   ok(/DS_LOCK_DIR/.test(ds) && /ds_lock_acquire/.test(ds) && /ds_lock_release/.test(ds)
      && /已有深睡实例在跑/.test(ds) && /运行锁刚被创建/.test(ds),
      'mkdir 运行锁：并发启动只留一个实例，刚创建的锁不抢');
-  ok(/ds_policy_migrate/.test(ds) && /push=com\.tencent\.mm:push/.test(ds)
+  ok(/ds_policy_migrate\(\)/.test(ds) && !/printf 'push=com\.tencent\.mm:push\\n'/.test(ds)
      && /bak-policy2/.test(ds) && /nice=%s/.test(ds),
-     '一次性策略迁移：内置 IM 从 white= 移到 nice=/push=');
+     '一次性策略迁移：内置 IM 从 white= 移出，且不再默认写微信 push=');
+  ok(/ds_policy_migrate_v4/.test(ds) && /policy_v4/.test(ds)
+     && /whitelist -com\.tencent\.mm/.test(ds),
+     'V4 迁移自动清除旧版残留的 push=com.tencent.mm:push 并释放微信 Doze 白名单');
   ok(/for pkg in \$\(ds_push_pkg_list/.test(ds),
      'push 包进 Doze 白名单（冻结已移除，Doze 是唯一会压后台的机制）');
   ok(!/ds_freeze_backend="sigstop"/.test(ds) && /ds_freeze_backend="none"/.test(ds),

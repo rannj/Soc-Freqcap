@@ -3028,9 +3028,11 @@ function paintLabels(){
    这里按 scripts/builtin_white.txt 覆盖显示名（只影响显示，不参与任何匹配）。
    启动时先取，之后 ensureLabels 看到已有名字就会跳过这个包，不会被英文标签盖回去。 */
 async function loadBuiltinNames(){
+  LABELS['com.tencent.mm'] = '微信';
+  BUILTIN_LABELS['com.tencent.mm'] = '微信';
   try{
     const out = await api('builtin_white');
-    let n = 0;
+    let n = 1;
     out.split('\n').forEach(l=>{
       const i = l.indexOf('\t');
       if(i < 1) return;
@@ -3038,7 +3040,7 @@ async function loadBuiltinNames(){
       if(v){ LABELS[l.slice(0, i)] = v; BUILTIN_LABELS[l.slice(0, i)] = v; n++; }
     });
     if(n) paintLabels();
-  }catch(_){}
+  }catch(_){ paintLabels(); }
 }
 
 /* 系统应用名兜底：只填 APK label 解析不出来的那些，不覆盖已有英文名。 */

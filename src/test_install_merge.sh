@@ -209,7 +209,20 @@ preset_case() {   # $1=芯片代号 $2=期望BIG $3=期望LITTLE $4=no|yes|yes-d
 }
 preset_case SM8750 46 51 no 45
 preset_case SM8850 46 52 no 42
+preset_case SM8850-AC 46 52 no 42
 preset_case SM8845 51 53 no 41
+
+# 一加 15T（OnePlus + SM8850-AC）命中专属预设 adapt/oneplus_sm8850.conf
+rm -rf "$T/data" "$T/mod"; mkdir -p "$T/data" "$T/mod" "$T/mod/adapt"
+cp "$MOD/socfreq.conf" "$T/mod/socfreq.conf"; cp "$MOD"/adapt/*.conf "$T/mod/adapt/"
+eval "getprop() { case \"\$1\" in ro.product.brand) echo OnePlus;; ro.soc.model) echo SM8850-AC;; ro.board.platform) echo canoe;; esac; }"
+mk_case; runcase
+chk "$(_g "$T/data/socfreq.conf" CPU_PCT_BIG)" "50" "一加 15T（SM8850-AC）→ CPU_PCT_BIG=50"
+chk "$(_g "$T/data/socfreq.conf" CPU_PCT_LITTLE)" "55" "一加 15T（SM8850-AC）→ CPU_PCT_LITTLE=55"
+chk "$(_g "$T/data/socfreq.conf" GPU_PCT)" "42" "一加 15T（SM8850-AC）→ GPU_PCT=42"
+chk "$(_g "$T/data/socfreq.conf" TH_HIGH)" "70" "一加 15T（SM8850-AC）→ TH_HIGH=70"
+chk "$(_g "$T/data/socfreq.conf" TH_LOW)" "64" "一加 15T（SM8850-AC）→ TH_LOW=64"
+chk "$(_g "$T/data/socfreq.conf" PSI_GAIN)" "15" "一加 15T（SM8850-AC）→ PSI_GAIN=15"
 preset_case SM8975 40 51 no 41
 preset_case SM8650 74 68 no 56
 preset_case SM8550 70 73 no 59
@@ -503,12 +516,18 @@ chk "$(has "$T/data/dsleep.conf" 'white=com.whatsapp' && echo y)" "y" \
     "pm 恢复后补上上一轮漏掉的"
 
 echo "== 场景 20：新版清单移除的包，升级时从豁免里撤下 =="
-# 模拟上一版内置过 Telegram（base 与 conf 都有），新清单里已经没有它。
-printf 'org.telegram.messenger\n' >> "$T/data/builtin_white.base.txt"
-printf 'white=org.telegram.messenger\n' >> "$T/data/dsleep.conf"
+# 模拟上一版内置过 Telegram 与微信（含旧版迁移留下的 push=com.tencent.mm:push），新清单里已经没有它们。
+grep -v '^com\.tencent\.mm' "$T/mod/scripts/builtin_white.txt" > "$T/bw"
+mv -f "$T/bw" "$T/mod/scripts/builtin_white.txt"
+printf 'org.telegram.messenger\ncom.tencent.mm\n' >> "$T/data/builtin_white.base.txt"
+printf 'white=org.telegram.messenger\nwhite=com.tencent.mm\npush=com.tencent.mm:push\n' >> "$T/data/dsleep.conf"
 mk_case; runcase_with "$T/bin"
 chk "$(grep -c '^white=org.telegram.messenger$' "$T/data/dsleep.conf")" "0" \
     "上游移除的豁免被撤下"
+chk "$(grep -c '^white=com.tencent.mm$' "$T/data/dsleep.conf")" "0" \
+    "微信移出内置白名单后，升级自动撤下 white=com.tencent.mm"
+chk "$(grep -c '^push=com.tencent.mm' "$T/data/dsleep.conf")" "0" \
+    "升级同时清掉旧版遗留的 push=com.tencent.mm:push"
 chk "$(grep -c '^white=com.tencent.mobileqq$' "$T/data/dsleep.conf")" "1" \
     "同一份清单里保留的项不受影响"
 

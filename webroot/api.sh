@@ -510,6 +510,7 @@ _preset_match() {
   _pm=$(getprop ro.product.model 2>/dev/null | tr 'a-z' 'A-Z')
   _ps=$(getprop ro.soc.model 2>/dev/null | tr 'a-z' 'A-Z')
   [ -z "$_ps" ] && _ps=$(getprop ro.board.platform 2>/dev/null | tr 'a-z' 'A-Z')
+  [ -z "$_ps" ] && _ps=$(awk '{print toupper($NF)}' /sys/devices/soc0/machine 2>/dev/null)
   PRESET_SOC=$_ps
   for _f in "$ROOT"/adapt/*.conf; do
     [ -f "$_f" ] || continue
@@ -1727,6 +1728,8 @@ cmd_reset_all() {
       printf 'white=%s\n' "$_p" >> "$DS_CONF" 2>/dev/null
     done < "$DATA/.rwnew"
     rm -f "$DATA/.rwinst" "$DATA/.rwnew" 2>/dev/null
+    command -v dumpsys >/dev/null 2>&1 \
+      && dumpsys deviceidle whitelist -com.tencent.mm >/dev/null 2>&1
   fi
 
   rm -f "$OVR" 2>/dev/null

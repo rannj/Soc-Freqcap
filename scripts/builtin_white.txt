@@ -9,8 +9,7 @@
 #
 # 一行一个包名；# 后面是给人看的名字，安装脚本不读，页面用它显示中文名。
 
-# ── 即时通讯 ──────────────────────────────────────────────────
-com.tencent.mm                    # 微信
+# ── 即时通讯（微信默认不豁免 Doze，按需可在 WebUI 手动加入） ──
 com.tencent.mobileqq              # 手机QQ
 com.tencent.tim                   # TIM
 com.tencent.wework                # 企业微信

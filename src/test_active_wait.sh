@@ -6,7 +6,7 @@ MOD=${1:-/data/local/tmp/sfmod}
 TMP=/data/local/tmp/socfreq_active_test
 RUN=$TMP/runner.sh
 rm -rf "$TMP"; mkdir -p "$TMP/power" "$TMP/run"
-touch "$TMP/run/policy_v2" "$TMP/run/policy_v3"   # 台架不跑真实策略迁移，别动系统的 Doze 白名单
+touch "$TMP/run/policy_v2" "$TMP/run/policy_v3" "$TMP/run/policy_v4"   # 台架不跑真实策略迁移，别动系统的 Doze 白名单
 printf 'state=normal\ngame_pkg=-\nfg=com.android.launcher\n' > "$TMP/status"
 printf 'enable=1\n' > "$TMP/dsleep.conf"
 
